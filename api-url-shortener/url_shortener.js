@@ -1,3 +1,5 @@
+const tls = require("tls");
+const fs = require("fs")
 const express = require("express");
 const bodyParser = require("body-parser");
 const path = require("path");
@@ -22,7 +24,8 @@ var firebaseConfig = {
 //<script src="https://www.gstatic.com/firebasejs/8.2.8/firebase-app.js"></script>
 //<script src="https://www.gstatic.com/firebasejs/8.2.8/firebase-firestore.js"></script>
 
-let map_users = new Map();
+let users = new Map();
+let urls = new Map();
 
 const app = express();
 
@@ -35,16 +38,35 @@ app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 })
 
+// GET /urls/:id
+// function: redirect user to url using urlId
+app.get("/urls/:id", (req, res) => {
+    const { id } = req.params;
+    if (urls.has(id)) {
+        res.redirect(301, urls[id].url);
+    } else {
+        res.sendStatus(404);
+    }
+})
+
+// POST /users/:userid/urls
+// function: store url
+app.post("/users/:userid/urls", (req, res) => {
+    const { ulr_name } = req.body;
+    const { userId } = req.params;
+
+})
+
 // POST /users
 // function: store user
 app.post("/users", (req, res) => {
     //console.log("print");
     const { id } = req.body;
-    if (map_users.has(id)) {
+    if (users.has(id)) {
         res.sendStatus(409);
         return;
     } else {
-        map_users.set(id, true);  // only used to check existence of user in O(1)
+        users.set(id, {});  // only used to check existence of user in O(1)
     }
     res.status(201).send({
         id : id 
@@ -52,6 +74,28 @@ app.post("/users", (req, res) => {
 });
 
 
+
+const options = {
+  // Necessary only if the server uses a self-signed certificate.
+  ca: [ fs.readFileSync('klaus-cert.pem') ],
+
+  // Necessary only if the server's cert isn't for "localhost".
+  checkServerIdentity: () => { return null; },
+};
+
+const socket = tls.connect(5000, options, () => {
+  console.log('client connected',
+              socket.authorized ? 'authorized' : 'unauthorized');
+  process.stdin.pipe(socket);
+  process.stdin.resume();
+});
+socket.setEncoding('utf8');
+socket.on('data', (data) => {
+  console.log(data);
+});
+socket.on('end', () => {
+  console.log('server ends connection');
+});
 
 // port 5000
 app.listen(5000, () => {
