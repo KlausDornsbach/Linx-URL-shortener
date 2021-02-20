@@ -1,18 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
 <html>
 
-<head>
-    <title>testing Firebase</title>
-    <script src="https://www.gstatic.com/firebasejs/8.2.8/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.2.8/firebase-firestore.js"></script>
-</head>
+    <head>
+        <script src="https://www.gstatic.com/firebasejs/8.2.8/firebase-app.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/8.2.8/firebase-firestore.js"></script>
+        <title>testing Firebase</title>
+    </head>
 
-<body>
-
-    <h1 id="hotDogOutput">Hot dog status:</h1>
-    <input type="textfield" id="latestHotDogStatus" />
-    <button id="saveButton">Save</button>
-    <script src="./url_shortener.js"></script>
-
-</body>
-
+    <body>
+        <form>
+            <h3 id="header">save user:</h3>
+            <input id="userInput" type="textfield"/>
+            <input value="save" type="submit"/>
+        </form>
+        <div class="result">Click save!</div>
+        <script>
+            document.addEventListener("submit", sendData);
+            
+            function sendData(e) {
+                e.preventDefault();
+                const user = document.querySelector("#userInput").value;
+                
+                fetch("/users", {
+                    method: "POST",
+                    headers: {
+                        Accept: "application/json",
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        id: user
+                    })
+                })
+                    .then(res => res.json())
+                    .then(data => {
+                        let a = JSON.stringify(data);
+                        console.log(a);
+                        document.querySelector(
+                            ".result"
+                        ).innerText = `${a}`;
+                    })
+                    .catch(err => console.log(err.name));
+            }
+        </script>
+    </body>
 </html>
+

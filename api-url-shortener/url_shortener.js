@@ -1,9 +1,8 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const path = require("path");
-
-//var firebase = require("firebase/app");
-
+//const firebase = require("firebase");
+/*
 var firebaseConfig = {
     apiKey: "AIzaSyAk1lbZR4Wk49Hk2PX8ayGTMNoaH4prpRE",
     authDomain: "linx-url-shortener.firebaseapp.com",
@@ -13,46 +12,48 @@ var firebaseConfig = {
     appId: "1:333461726133:web:f804b59e6c227c00e82ffc",
     measurementId: "G-L6017LFJY3"
 };
-
+*/
 // Initialize Firebase
-firebase.initializeApp(firebaseConfig);  
-var firestore = firebase.firestore();
+//firebase.initializeApp(firebaseConfig);  
+//var firestore = firebase.firestore();
 
-const docRef = firestore.doc("samples/sandwichData");
-const outputHeader = document.querySelector("#hotDogOutput");
-const inputTextField = document.querySelector("#latestHotDogStatus");
-const saveButton = document.querySelector("#saveButton");
+//const docRef = firestore.doc("samples/sandwichData");
 
-saveButton.addEventListener("click", function() {
-    const textToSave = inputTextField.value;
-    console.log("I am gonna save" + textToSave + "to Firestore");
-    docRef.set({
-        hotDogStatus: textToSave
-    }).then(function() {
-        console.log("status saved!");
-    }).catch(function (error) {
-        console.log("Got an error: ", error);
-    });
-})
+//<script src="https://www.gstatic.com/firebasejs/8.2.8/firebase-app.js"></script>
+//<script src="https://www.gstatic.com/firebasejs/8.2.8/firebase-firestore.js"></script>
 
-
-
-let map_users = new Map();  // only used to check existence of user in O(1)
+let map_users = new Map();
 
 const app = express();
 
+// help express deal with post
 app.use(bodyParser.json());
 
+// main page
+app.get("/", (req, res) => {
+    console.log("page hit");
+    res.sendFile(path.join(__dirname, "index.html"));
+})
+
+// POST /users
+// function: store user
 app.post("/users", (req, res) => {
+    //console.log("print");
     const { id } = req.body;
     if (map_users.has(id)) {
         res.sendStatus(409);
+        return;
     } else {
-        map_users[id] = id;  // only used to check existence of user in O(1)
+        map_users.set(id, true);  // only used to check existence of user in O(1)
     }
-    res.sendStatus(201);
+    res.status(201).send({
+        id : id 
+    });
 });
 
+
+
+// port 5000
 app.listen(5000, () => {
     console.log(`Server is running on port 5000.`);
 });
