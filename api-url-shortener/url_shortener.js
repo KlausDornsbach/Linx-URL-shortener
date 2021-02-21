@@ -1,10 +1,15 @@
-const tls = require("tls");
-const fs = require("fs")
+
 const express = require("express");
 const bodyParser = require("body-parser");
 const path = require("path");
-//const firebase = require("firebase");
-/*
+const firebase = require("firebase");
+const shortid = require("shortid");
+//const validUrl = require("valid-url");
+
+var baseUrl = "http://localhost";
+var port = 5000;
+
+// The database //
 var firebaseConfig = {
     apiKey: "AIzaSyAk1lbZR4Wk49Hk2PX8ayGTMNoaH4prpRE",
     authDomain: "linx-url-shortener.firebaseapp.com",
@@ -14,23 +19,18 @@ var firebaseConfig = {
     appId: "1:333461726133:web:f804b59e6c227c00e82ffc",
     measurementId: "G-L6017LFJY3"
 };
-*/
+
 // Initialize Firebase
-//firebase.initializeApp(firebaseConfig);  
-//var firestore = firebase.firestore();
+firebase.initializeApp(firebaseConfig);  
+const db = firebase.firestore();
 
-//const docRef = firestore.doc("samples/sandwichData");
 
-//<script src="https://www.gstatic.com/firebasejs/8.2.8/firebase-app.js"></script>
-//<script src="https://www.gstatic.com/firebasejs/8.2.8/firebase-firestore.js"></script>
-
-let users = new Map();
-let urls = new Map();
-
+// The app //
 const app = express();
 
 // help express deal with post
 app.use(bodyParser.json());
+
 
 // main page
 app.get("/", (req, res) => {
@@ -51,53 +51,73 @@ app.get("/urls/:id", (req, res) => {
 
 // POST /users/:userid/urls
 // function: store url
-app.post("/users/:userid/urls", (req, res) => {
-    const { ulr_name } = req.body;
-    const { userId } = req.params;
-
+app.post("/users/:userId/urls", async (req, res) => {
+    console.log("call to this");
+    const { url } = req.body;
+    console.log(`url: ${ url }`);
+    const userId = req.params.userId;
+    console.log(`user: ${ userId }`);
+    
+    let code = shortid(url);
+    console.log(`shortid: ${ code }`);
+    let shortUrl = baseUrl + ":" + port + "/" + code;
+    console.log(`shortUrl: ${shortUrl}`);
+    var urlRef = await db.doc(`users/${userId}/urls`).get(shortUrl).catch(err=>alert(err));
+    console.log(`shortUrl: ${urlRef}`);
+    if(urlRef.exists) {
+        console.log("exists");
+        res.sendStatus(409);
+    } else {
+        var newUrl = urlRef.push();    // used to create new ID for url 
+        newUrl.set({
+            "hits": 0,
+            "url": url,
+            "shortUrl": shortUrl
+        });
+        console.log(`newUrl: ` + newUrl);
+        res.status(201).send(newUrl);
+    }
 })
 
 // POST /users
 // function: store user
-app.post("/users", (req, res) => {
+app.post("/users", async (req, res) => {
     //console.log("print");
     const { id } = req.body;
-    if (users.has(id)) {
-        res.sendStatus(409);
-        return;
-    } else {
-        users.set(id, {});  // only used to check existence of user in O(1)
+    const user = {
+        id: id,
     }
-    res.status(201).send({
-        id : id 
-    });
+    var userRef = await db.collection("users").doc(id).get(); // query to firebase
+    if (userRef.exists) {   // if exists, sends error
+        console.log("exists");
+        res.sendStatus(409);
+    } else {
+        userRef = await db.collection("users").doc(id).set(user);
+        console.log(JSON.stringify(userRef));
+        res.status(201).send({
+            id : id 
+        });
+    }
 });
 
+// DELETE /users/:userId
+// function: delete user
+app.delete("/users/:userId", async (req, res) => {
+    let userId = req.params.userId;  // this is how you access route parameters
+    console.log(userId);
+    var userRef = await db.collection("users").doc(userId).get().catch(err=>alert(err));
+    if (userRef.exists) {
+        const userRef = await db.collection("users").doc(userId).delete();
+        res.status(200).send({});
+    } else {
+        res.sendStatus(404);  // user not found 
+    }
+})
 
-
-const options = {
-  // Necessary only if the server uses a self-signed certificate.
-  ca: [ fs.readFileSync('klaus-cert.pem') ],
-
-  // Necessary only if the server's cert isn't for "localhost".
-  checkServerIdentity: () => { return null; },
-};
-
-const socket = tls.connect(5000, options, () => {
-  console.log('client connected',
-              socket.authorized ? 'authorized' : 'unauthorized');
-  process.stdin.pipe(socket);
-  process.stdin.resume();
-});
-socket.setEncoding('utf8');
-socket.on('data', (data) => {
-  console.log(data);
-});
-socket.on('end', () => {
-  console.log('server ends connection');
-});
 
 // port 5000
-app.listen(5000, () => {
-    console.log(`Server is running on port 5000.`);
+app.listen(port, () => {
+    console.log(`Server is running on port ${port}.`);
 });
+
+// The shorting method
