@@ -4,6 +4,8 @@ const bodyParser = require("body-parser");
 const path = require("path");
 const firebase = require("firebase");
 const shortid = require("shortid");
+const FieldValue = require('firebase-admin').firestore.FieldValue;
+const increment = firebase.firestore.FieldValue.increment(1);
 //const validUrl = require("valid-url");
 
 var baseUrl = "http://localhost";
@@ -38,12 +40,82 @@ app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 })
 
+// GET /stats/:id
+// return url stats
+app.get("/stats/:id", async (req, res) => {
+    const { id } = req.params;
+    let urlsQuery = await db.collectionGroup("urls").where("id", "==", id). // check existence
+                                    get().catch(err=>console.error(err));
+    if (!urlsQuery.empty) {
+        let urlStats = urlsQuery.docs[0].data();
+        urlStats.id = urlsQuery.docs[0].id;
+        urlRef();
+        
+        delete urlStats.user;
+        res.send(urlStats);
+    } else {
+        res.sendStatus(404);
+    }
+})
+
+// GET /stats
+// return global stats (total hits, url count, topUrls)
+
+
+// GET /:code
+// uses short url to return real url
+
+
+// GET /users/:id/stats
+// return user stats
+
+
+
+
+
+
+//                             |
+// FULLY IMPLEMENTED FUNCTIONS v
+
 // GET /urls/:id
 // function: redirect user to url using urlId
-app.get("/urls/:id", (req, res) => {
+app.get("/urls/:id", async (req, res) => {
     const { id } = req.params;
-    if (urls.has(id)) {
-        res.redirect(301, urls[id].url);
+    let urlsQuery = await db.collectionGroup("urls").where("id", "==", id). // check existence
+                                    get().catch(err=>console.error(err));
+    if (!urlsQuery.empty) {
+        let userId = urlsQuery.docs[0].data().user;
+        urlRef = db.collection("users").doc(userId).collection("urls").doc(id);
+        
+        // method to count hits
+        const urlStatsRef = urlRef.collection("stories").doc("--stats--");
+        const storyRef = urlRef.collection("stories").doc(`${Math.random()}`);
+
+        const batch = db.batch();
+        batch.set(storyRef, { title: "new hit" });
+        batch.set(urlStatsRef, { hitCount: increment}, {merge: true});
+        batch.commit();
+        
+        res.redirect(301, urlsQuery.docs[0].data().url);
+    } else {
+        res.sendStatus(404);
+    }
+})
+
+// DELETE /urls/:id
+// deletes url of id: id
+app.delete("/urls/:id", async (req, res) => {
+    const { id } = req.params;
+    let urlsQuery = await db.collectionGroup("urls").where("id", "==", id). // check existence
+                                    get().catch(err=>console.error(err));
+    if(!urlsQuery.empty) {
+        urlsQuery.forEach(async (doc) => {
+            let key = doc.id;
+            let userId = doc.data().user;
+            await db.collection("users").doc(userId).collection("urls"). // deleting
+                                    doc(key).delete().catch(err=>console.error(err));  
+        })
+        res.send({});
     } else {
         res.sendStatus(404);
     }
@@ -52,29 +124,38 @@ app.get("/urls/:id", (req, res) => {
 // POST /users/:userid/urls
 // function: store url
 app.post("/users/:userId/urls", async (req, res) => {
-    console.log("call to this");
     const { url } = req.body;
-    console.log(`url: ${ url }`);
     const userId = req.params.userId;
-    console.log(`user: ${ userId }`);
-    
+
+    let usersRef = db.collection("users"); 
+    let urlsRef = usersRef.doc(userId).collection("urls");
+    let urlsRefQuery = await urlsRef.where("url", "==", url).get(); // check if exists
+    //console.log(urlsRefQuery.empty);
+
     let code = shortid(url);
-    console.log(`shortid: ${ code }`);
-    let shortUrl = baseUrl + ":" + port + "/" + code;
-    console.log(`shortUrl: ${shortUrl}`);
-    var urlRef = await db.doc(`users/${userId}/urls`).get(shortUrl).catch(err=>alert(err));
-    console.log(`shortUrl: ${urlRef}`);
-    if(urlRef.exists) {
-        console.log("exists");
+    let shortUrl = "http://<host>[:<port>]/" + code;
+
+    if(!urlsRefQuery.empty) {
+        console.log("exists");  
         res.sendStatus(409);
     } else {
-        var newUrl = urlRef.push();    // used to create new ID for url 
-        newUrl.set({
+        let newUrl = {
             "hits": 0,
             "url": url,
-            "shortUrl": shortUrl
-        });
-        console.log(`newUrl: ` + newUrl);
+            "shortUrl": code,
+            "user": userId
+        }
+        const dbResponse = await db.collection("users").doc(userId).  // create new url
+                                collection("urls").add(newUrl).catch(err=>console.error(err));    
+        
+        newUrl.id = dbResponse.id;
+        
+        await db.collection("users").doc(userId).collection("urls").doc(dbResponse.id).
+                                set( newUrl ).catch(err=>console.error(err));   
+        // necessary query to send id sad unoptimized noises :c
+                
+        delete newUrl.user;
+        newUrl.shortUrl = shortUrl;
         res.status(201).send(newUrl);
     }
 })
@@ -87,13 +168,12 @@ app.post("/users", async (req, res) => {
     const user = {
         id: id,
     }
-    var userRef = await db.collection("users").doc(id).get(); // query to firebase
+    let userRef = await db.collection("users").doc(id).get(); // check if exists
     if (userRef.exists) {   // if exists, sends error
         console.log("exists");
         res.sendStatus(409);
     } else {
-        userRef = await db.collection("users").doc(id).set(user);
-        console.log(JSON.stringify(userRef));
+        userRef = await db.collection("users").doc(id).set(user); // send data
         res.status(201).send({
             id : id 
         });
@@ -105,9 +185,9 @@ app.post("/users", async (req, res) => {
 app.delete("/users/:userId", async (req, res) => {
     let userId = req.params.userId;  // this is how you access route parameters
     console.log(userId);
-    var userRef = await db.collection("users").doc(userId).get().catch(err=>alert(err));
-    if (userRef.exists) {
-        const userRef = await db.collection("users").doc(userId).delete();
+    let userRef = await db.collection("users").doc(userId).get().catch(err=>alert(err));// check
+    if (userRef.exists) {                                                               // exists
+        await db.collection("users").doc(userId).delete(); // delete
         res.status(200).send({});
     } else {
         res.sendStatus(404);  // user not found 
@@ -120,4 +200,23 @@ app.listen(port, () => {
     console.log(`Server is running on port ${port}.`);
 });
 
-// The shorting method
+
+// in firebase, you can update a document about once per second, to overcome this 
+// i used this implement of distributed counter (shard counter)
+
+function incrementCounter(docRef, numShards) {
+    const shardId = Math.floor(Math.random() * numShards);
+    const shardRef = docRef.collection('shards').doc(shardId.toString());
+    return shardRef.set({count: FieldValue.increment(1)}, {merge: true});
+}
+
+async function getCount(docRef) {
+    const querySnapshot = await docRef.collection('shards').get();
+    const documents = querySnapshot.docs;
+  
+    let count = 0;
+    for (const doc of documents) {
+      count += doc.get('count');
+    }
+    return count;
+}
