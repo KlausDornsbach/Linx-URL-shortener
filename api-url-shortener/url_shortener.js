@@ -8,7 +8,7 @@ const FieldValue = require('firebase-admin').firestore.FieldValue;
 const increment = firebase.firestore.FieldValue.increment(1);
 //const validUrl = require("valid-url");
 
-var baseUrl = "http://localhost";
+//var baseUrl = "http://localhost";
 var port = 5000;
 
 // The database //
@@ -40,35 +40,49 @@ app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 })
 
-// GET /stats/:id
-// return url stats
-app.get("/stats/:id", async (req, res) => {
-    const { id } = req.params;
-    let urlsQuery = await db.collectionGroup("urls").where("id", "==", id). // check existence
-                                    get().catch(err=>console.error(err));
-    if (!urlsQuery.empty) {
-        let urlStats = urlsQuery.docs[0].data();
-        urlStats.id = urlsQuery.docs[0].id;
-        urlRef();
-        
-        delete urlStats.user;
-        res.send(urlStats);
-    } else {
-        res.sendStatus(404);
-    }
-})
 
 // GET /stats
 // return global stats (total hits, url count, topUrls)
 
 
-// GET /:code
-// uses short url to return real url
-
 
 // GET /users/:id/stats
 // return user stats
-
+app.get("/users/:userId/stats", async (req, res) => {
+    const { userId } = req.params;
+    if (await db.collection("users").doc(userId).empty) {
+        res.sendStatus(404);
+        return;
+    }
+    const queryUrls = await db.collection("users").doc(userId).collection("urls").get();
+    let out = {
+        "hits": 0,
+        "urlCount": 0,
+        "topUrls":[],
+        "urls":[]
+    }
+    if (!queryUrls.empty) {
+        queryUrls.forEach(async doc => {
+            const hits = await db.collection("users").doc(doc.data().user).collection("urls").
+                                    doc(doc.id).collection("stories").doc("--stats--").get();
+            let url = doc.data();
+            if (!hits.empty) {
+                const docHitCount = hits.data().hitCount // grab hit count
+                if (!url.hits == docHitCount) { // is "hits" it up to date?
+                    url.hits = docHitCount; // update hit count
+                    await db.collection("users").doc(doc.data().user).collection("urls").
+                                        doc(doc.id).set(url);
+                }
+            }
+            delete url.user;
+            out.urlCount = out.urlCount + 1;
+            out.hits = out.hits + url.hits;
+            out.urls.push(url);
+            console.log(out);
+        })
+        res.send(out);
+    }
+})
 
 
 
@@ -76,6 +90,48 @@ app.get("/stats/:id", async (req, res) => {
 
 //                             |
 // FULLY IMPLEMENTED FUNCTIONS v
+
+// GET /:code
+// uses short url to return real url
+app.get("/:code", async (req, res) => {
+    const { code } = req.params;
+    let urlsQuery = await db.collectionGroup("urls").where("shortUrl", "==", code). // check existence
+                                    get().catch(err=>console.error(err));
+    if (!urlsQuery.empty) {
+        res.redirect(301, urlsQuery.docs[0].data().url);
+    } else {
+        res.sendStatus(404);
+    }
+})
+
+//GET /stats/:id
+//return url stats
+app.get("/stats/:id", async (req, res) => {
+    const { id } = req.params;
+    let urlsQuery = await db.collectionGroup("urls").where("id", "==", id). // check existence
+                                    get().catch(err=>console.error(err));
+    if (!urlsQuery.empty) {
+        let urlStats = urlsQuery.docs[0].data();
+        jsonStats = {
+            hits: urlStats.hits,
+            id: urlStats.id,
+            shortUrl: urlStats.shortUrl,
+            url: urlStats.url,
+            user: urlStats.user
+        }
+        urlStats.id = urlsQuery.docs[0].id;
+        let realHits = await db.collection("users").doc(urlStats.user).collection("urls").doc(id). // check existence
+                                    collection("stories").doc("--stats--").get();
+        
+        jsonStats.hits = realHits.data().hitCount;
+        await db.collection("users").doc(urlStats.user).collection("urls").
+                                    doc(urlStats.hits).set({jsonStats}).catch(err=>console.error(err));
+        res.send(jsonStats);
+    } else {
+        res.sendStatus(404);
+    }
+})
+
 
 // GET /urls/:id
 // function: redirect user to url using urlId
